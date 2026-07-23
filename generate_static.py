@@ -48,16 +48,15 @@ async def main(limit: int | None = None):
 
     # Scrape all events
     log("\nScraping events...")
-    events: list[Event] = []
 
-    async with SmoothcompScraper(rate_limit=0.3) as scraper:
-        async for event, current, total, is_new in scraper.scrape_events_iter(max_events=limit):
-            events.append(event)
-
-            if current % 50 == 0 or current == total:
-                log(f"  Progress: {current}/{total}")
+    async with SmoothcompScraper() as scraper:
+        events: list[Event] = await scraper.get_events(max_events=limit)
 
     log(f"\nCollected {len(events)} upcoming events")
+
+    # Fail loudly rather than deploying an empty calendar over good data
+    if not events:
+        raise SystemExit("No events collected - refusing to generate empty calendars")
 
     # Group events by country
     events_by_country: dict[str, list[Event]] = {}

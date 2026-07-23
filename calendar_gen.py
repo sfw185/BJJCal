@@ -4,7 +4,7 @@ iCal/Webcal Generator
 Converts events to iCalendar format for webcal subscriptions.
 """
 
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
 from icalendar import Calendar, Event as ICalEvent, vText
@@ -67,14 +67,19 @@ def create_ical_event(event: Event) -> Optional[ICalEvent]:
 
     # Required fields
     ical_event.add('uid', f'{event.id}@smoothcomp.com')
-    ical_event.add('dtstamp', datetime.now())
+    ical_event.add('dtstamp', datetime.now(timezone.utc))
     ical_event.add('dtstart', event.start_date)
 
-    # End date (default to start + 8 hours if not specified)
-    if event.end_date:
-        ical_event.add('dtend', event.end_date)
+    if isinstance(event.start_date, datetime):
+        # Timed event: default to start + 8 hours if no end is known
+        ical_event.add('dtend', event.end_date or event.start_date + timedelta(hours=8))
     else:
-        ical_event.add('dtend', event.start_date + timedelta(hours=8))
+        # All-day event: DTEND is exclusive, so it lands on the day after the
+        # last day of the tournament
+        last_day = event.end_date or event.start_date
+        if last_day < event.start_date:
+            last_day = event.start_date
+        ical_event.add('dtend', last_day + timedelta(days=1))
 
     # Summary (event name)
     ical_event.add('summary', event.name)

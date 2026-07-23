@@ -2,18 +2,21 @@
 Smoothcomp Event Scraper
 
 Fetches upcoming events from smoothcomp.com and extracts event details.
+
+All data comes from the events data embedded in the upcoming-events listing
+page. Individual event pages sit behind a Cloudflare challenge and cannot be
+fetched, but the listing already carries everything the calendar needs.
 """
 
 import asyncio
+import html as html_mod
 import json
 import re
 from dataclasses import dataclass, asdict
-from datetime import datetime
+from datetime import date
 from typing import Optional
-from urllib.parse import urljoin
 
 import aiohttp
-from bs4 import BeautifulSoup
 
 
 @dataclass
@@ -22,8 +25,8 @@ class Event:
     id: str
     name: str
     url: str
-    start_date: Optional[datetime] = None
-    end_date: Optional[datetime] = None
+    start_date: Optional[date] = None
+    end_date: Optional[date] = None
     location: Optional[str] = None
     city: Optional[str] = None
     country: Optional[str] = None
@@ -40,6 +43,10 @@ class Event:
         if self.end_date:
             d['end_date'] = self.end_date.isoformat()
         return d
+
+
+class ScrapeError(RuntimeError):
+    """Raised when the listing page cannot be parsed."""
 
 
 class SmoothcompScraper:
@@ -68,231 +75,111 @@ class SmoothcompScraper:
         if self._session:
             await self._session.close()
 
-    async def get_event_urls(self) -> list[str]:
+    async def _fetch_listing(self) -> str:
+        """Fetch the upcoming events page HTML."""
+        async with self._session.get(
+            self.EVENTS_URL, timeout=aiohttp.ClientTimeout(total=60)
+        ) as resp:
+            if resp.status != 200:
+                raise ScrapeError(f"{self.EVENTS_URL} returned HTTP {resp.status}")
+            return await resp.text()
+
+    def _bjj_category_ids(self, html: str) -> set[str]:
         """
-        Fetch the main events page and return only BJJ event URLs.
+        Extract Jiu-Jitsu category IDs from the page's category mapping.
 
-        Parses the embedded events data and category mapping to filter
-        events whose categoryGroups include any Jiu-Jitsu category.
-
-        Returns:
-            List of event URLs (BJJ only)
+        Format: :category-groups="{...html-encoded JSON...}"
         """
-        async with self._session.get(self.EVENTS_URL) as resp:
-            html = await resp.text()
-
-        # Extract category mapping from Vue component attribute
-        # Format: :category-groups="{...html-encoded JSON...}"
-        bjj_category_ids = set()
         cat_match = re.search(r':category-groups="(.*?)"', html)
-        if cat_match:
-            import html as html_mod
-            cat_data = json.loads(html_mod.unescape(cat_match.group(1)))
-            for group_categories in cat_data.values():
-                for cat in group_categories:
-                    if 'Jiu-Jitsu' in cat.get('name', ''):
-                        bjj_category_ids.add(str(cat['id']))
+        if not cat_match:
+            raise ScrapeError("could not find :category-groups mapping on listing page")
 
-        if not bjj_category_ids:
-            print("Warning: could not find Jiu-Jitsu category IDs, falling back to unfiltered")
-            # Fallback to JSON-LD (unfiltered)
-            soup = BeautifulSoup(html, 'html.parser')
-            for script in soup.find_all('script', type='application/ld+json'):
-                try:
-                    data = json.loads(script.string)
-                    if data.get('@type') == 'ItemList':
-                        return [item['url'] for item in data.get('itemListElement', []) if 'url' in item]
-                except (json.JSONDecodeError, TypeError):
-                    continue
-            return []
+        cat_data = json.loads(html_mod.unescape(cat_match.group(1)))
+        ids = {
+            str(cat['id'])
+            for group_categories in cat_data.values()
+            for cat in group_categories
+            if 'Jiu-Jitsu' in cat.get('name', '')
+        }
+        if not ids:
+            raise ScrapeError("no Jiu-Jitsu category IDs found in category mapping")
+        return ids
 
-        print(f"  BJJ category IDs: {bjj_category_ids}")
-
-        # Extract the var events = [...] array
+    def _raw_events(self, html: str) -> list[dict]:
+        """Extract the `var events = [...]` array from the listing page."""
         events_match = re.search(r'var events = (\[.*?\])\s*\n', html, re.DOTALL)
         if not events_match:
-            print("Warning: could not parse events array from page")
-            return []
+            raise ScrapeError("could not find `var events` array on listing page")
+        return json.loads(events_match.group(1))
 
-        all_events = json.loads(events_match.group(1))
-        bjj_events = [
+    def _event_from_listing(self, data: dict) -> Optional[Event]:
+        """Build an Event from one entry of the listing's events array."""
+        url = data.get('url')
+        event_id = data.get('id')
+        if not url or event_id is None:
+            return None
+
+        def parse_date(value: Optional[str]) -> Optional[date]:
+            if not value:
+                return None
+            try:
+                return date.fromisoformat(value)
+            except ValueError:
+                return None
+
+        def clean(value: Optional[str]) -> str:
+            """Trim and collapse the ragged whitespace found in source data."""
+            text = re.sub(r'\s+', ' ', (value or '')).strip()
+            return re.sub(r'\s+([,.])', r'\1', text)
+
+        return Event(
+            id=str(event_id),
+            name=clean(data.get('title')) or 'Unknown Event',
+            url=url,
+            start_date=parse_date(data.get('startdate')),
+            end_date=parse_date(data.get('enddate')),
+            city=clean(data.get('location_city')),
+            country=clean(data.get('location_country_human')),
+            sport='Brazilian Jiu-Jitsu',
+            registration_open=not data.get('eventEnded', False),
+        )
+
+    async def get_events(self, max_events: Optional[int] = None) -> list[Event]:
+        """
+        Fetch upcoming BJJ events from the listing page.
+
+        Args:
+            max_events: Maximum number of events to return (None for all)
+
+        Returns:
+            List of Event objects, sorted by start date
+
+        Raises:
+            ScrapeError: If the page layout changed and cannot be parsed
+        """
+        html = await self._fetch_listing()
+
+        bjj_category_ids = self._bjj_category_ids(html)
+        print(f"  BJJ category IDs: {sorted(bjj_category_ids)}", flush=True)
+
+        all_events = self._raw_events(html)
+        bjj_raw = [
             e for e in all_events
             if any(cg in bjj_category_ids for cg in e.get('categoryGroups', []))
         ]
+        print(f"  Filtered {len(bjj_raw)} BJJ events from {len(all_events)} total", flush=True)
 
-        print(f"  Filtered {len(bjj_events)} BJJ events from {len(all_events)} total")
+        events = [e for e in (self._event_from_listing(raw) for raw in bjj_raw) if e]
 
-        return [e['url'] for e in bjj_events]
+        skipped = len(bjj_raw) - len(events)
+        if skipped:
+            print(f"  Skipped {skipped} events with unusable data", flush=True)
 
-    async def get_event_details(self, url: str) -> Optional[Event]:
-        """
-        Fetch an individual event page and extract details.
-
-        Args:
-            url: Event page URL
-
-        Returns:
-            Event object or None if parsing fails
-        """
-        try:
-            async with self._session.get(url, timeout=aiohttp.ClientTimeout(total=30)) as resp:
-                if resp.status != 200:
-                    return None
-                html = await resp.text()
-        except Exception as e:
-            print(f"Error fetching {url}: {e}")
-            return None
-
-        soup = BeautifulSoup(html, 'html.parser')
-
-        # Extract event ID from URL
-        event_id_match = re.search(r'/event/(\d+)', url)
-        event_id = event_id_match.group(1) if event_id_match else url
-
-        # Try to get data from JSON-LD first (most reliable)
-        event = self._parse_jsonld(soup, url, event_id)
-        if event:
-            return event
-
-        # Fallback to HTML parsing
-        return self._parse_html(soup, url, event_id)
-
-    def _parse_jsonld(self, soup: BeautifulSoup, url: str, event_id: str) -> Optional[Event]:
-        """Parse event data from JSON-LD schema."""
-        for script in soup.find_all('script', type='application/ld+json'):
-            try:
-                data = json.loads(script.string)
-                if data.get('@type') == 'SportsEvent':
-                    return self._event_from_jsonld(data, url, event_id)
-            except (json.JSONDecodeError, TypeError):
-                continue
-        return None
-
-    def _event_from_jsonld(self, data: dict, url: str, event_id: str) -> Event:
-        """Create Event from JSON-LD data."""
-        location_data = data.get('location', {})
-        address_data = location_data.get('address', {})
-
-        start_date = None
-        end_date = None
-
-        if data.get('startDate'):
-            try:
-                start_date = datetime.fromisoformat(data['startDate'].replace('Z', '+00:00'))
-            except ValueError:
-                pass
-
-        if data.get('endDate'):
-            try:
-                end_date = datetime.fromisoformat(data['endDate'].replace('Z', '+00:00'))
-            except ValueError:
-                pass
-
-        # Extract country
-        country = address_data.get('addressCountry', '')
-        if isinstance(country, dict):
-            country = country.get('name', '')
-
-        return Event(
-            id=event_id,
-            name=data.get('name', 'Unknown Event'),
-            url=url,
-            start_date=start_date,
-            end_date=end_date,
-            location=location_data.get('name', ''),
-            city=address_data.get('addressLocality', ''),
-            country=country,
-            sport=data.get('sport', 'Grappling'),
-            organizer=data.get('organizer', {}).get('name', ''),
-            registration_open=True  # Default, could parse from page
-        )
-
-    def _parse_html(self, soup: BeautifulSoup, url: str, event_id: str) -> Optional[Event]:
-        """Fallback HTML parsing when JSON-LD is not available."""
-        title = soup.find('title')
-        name = title.text.strip() if title else 'Unknown Event'
-
-        # Clean up title (often includes "| Smoothcomp")
-        name = re.sub(r'\s*\|\s*Smoothcomp.*$', '', name)
-
-        return Event(
-            id=event_id,
-            name=name,
-            url=url
-        )
-
-    async def scrape_events_iter(
-        self,
-        max_events: Optional[int] = None,
-        existing_ids: Optional[set[str]] = None
-    ):
-        """
-        Async generator that yields events one at a time as they're scraped.
-        Prioritizes new events (not in existing_ids) first.
-
-        Args:
-            max_events: Maximum number of events to fetch (None for all)
-            existing_ids: Set of event IDs already in database (scraped last)
-
-        Yields:
-            Tuple of (event, current_index, total_count, is_new)
-        """
-        urls = await self.get_event_urls()
+        events.sort(key=lambda e: (e.start_date is None, e.start_date))
 
         if max_events:
-            urls = urls[:max_events]
+            events = events[:max_events]
 
-        # Extract IDs and split into new vs existing
-        if existing_ids:
-            new_urls = []
-            update_urls = []
-            for url in urls:
-                event_id_match = re.search(r'/event/(\d+)', url)
-                event_id = event_id_match.group(1) if event_id_match else None
-                if event_id and event_id in existing_ids:
-                    update_urls.append(url)
-                else:
-                    new_urls.append(url)
-            # Process new events first, then updates
-            ordered_urls = new_urls + update_urls
-            new_count = len(new_urls)
-        else:
-            ordered_urls = urls
-            new_count = len(urls)
-
-        total = len(ordered_urls)
-
-        for i, url in enumerate(ordered_urls):
-            event = await self.get_event_details(url)
-            if event:
-                is_new = i < new_count
-                yield event, i + 1, total, is_new
-
-            # Rate limiting
-            await asyncio.sleep(self.rate_limit)
-
-    async def scrape_events(
-        self,
-        max_events: Optional[int] = None,
-        progress_callback=None,
-        existing_ids: Optional[set[str]] = None
-    ) -> list[Event]:
-        """
-        Scrape all upcoming events (batch mode).
-
-        Args:
-            max_events: Maximum number of events to fetch (None for all)
-            progress_callback: Optional callback(current, total) for progress
-            existing_ids: Set of event IDs already in database
-
-        Returns:
-            List of Event objects
-        """
-        events = []
-        async for event, current, total, is_new in self.scrape_events_iter(max_events, existing_ids):
-            events.append(event)
-            if progress_callback:
-                progress_callback(current, total)
         return events
 
 
@@ -300,25 +187,15 @@ async def main():
     """Test the scraper."""
     print("Starting Smoothcomp scraper...")
 
-    async with SmoothcompScraper(rate_limit=0.3) as scraper:
-        # First, get all event URLs
-        print("Fetching event URLs...")
-        urls = await scraper.get_event_urls()
-        print(f"Found {len(urls)} event URLs")
+    async with SmoothcompScraper() as scraper:
+        events = await scraper.get_events()
 
-        # Scrape first 5 events as a test
-        print("\nScraping first 5 events for testing...")
-        events = await scraper.scrape_events(
-            max_events=5,
-            progress_callback=lambda c, t: print(f"  Progress: {c}/{t}")
-        )
-
-        print(f"\nScraped {len(events)} events:")
-        for event in events:
-            print(f"\n  {event.name}")
-            print(f"    Date: {event.start_date}")
-            print(f"    Location: {event.city}, {event.country}")
-            print(f"    URL: {event.url}")
+    print(f"\nScraped {len(events)} events. First 5:")
+    for event in events[:5]:
+        print(f"\n  {event.name}")
+        print(f"    Date: {event.start_date} - {event.end_date}")
+        print(f"    Location: {event.city}, {event.country}")
+        print(f"    URL: {event.url}")
 
 
 if __name__ == "__main__":

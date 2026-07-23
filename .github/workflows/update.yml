@@ -62,7 +62,7 @@ jobs:
     needs: deploy-static
     if: always() && !cancelled() && needs.deploy-static.result != 'failure'
     runs-on: ubuntu-latest
-    timeout-minutes: 360
+    timeout-minutes: 15
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -78,7 +78,7 @@ jobs:
           cache: 'pip'
 
       - name: Install dependencies
-        run: pip install aiohttp beautifulsoup4 icalendar
+        run: pip install -r requirements.txt
 
       - name: Generate static files
         run: python generate_static.py
