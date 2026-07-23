@@ -37,10 +37,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Restore cached calendar data
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: |
             static/calendars
@@ -49,13 +49,13 @@ jobs:
           restore-keys: calendar-data-
 
       - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v5
         with:
           path: static/
 
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
 
   # Phase 2: Scrape fresh data and redeploy
   scrape-and-deploy:
@@ -69,10 +69,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: '3.12'
           cache: 'pip'
@@ -84,7 +84,7 @@ jobs:
         run: python generate_static.py
 
       - name: Cache calendar data
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: |
             static/calendars
@@ -92,16 +92,16 @@ jobs:
           key: calendar-data-${{ github.run_id }}
 
       - name: Delete previous pages artifact
-        uses: geekyeggo/delete-artifact@v5
+        uses: geekyeggo/delete-artifact@v6
         with:
           name: github-pages
           failOnError: false
 
       - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v5
         with:
           path: static/
 
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
