@@ -44,7 +44,13 @@ async def main(limit: int | None = None):
     if limit:
         log(f"Test mode: limiting to {limit} events")
     OUTPUT_DIR.mkdir(exist_ok=True)
-    (OUTPUT_DIR / "calendars").mkdir(exist_ok=True)
+    calendars_dir = OUTPUT_DIR / "calendars"
+    calendars_dir.mkdir(exist_ok=True)
+
+    # Clear stale calendars so a country that no longer has events cannot
+    # leave an orphaned .ics file behind
+    for stale in calendars_dir.glob("*.ics"):
+        stale.unlink()
 
     # Scrape all events
     log("\nScraping events...")
