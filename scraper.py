@@ -133,14 +133,23 @@ class SmoothcompScraper:
             text = re.sub(r'\s+', ' ', (value or '')).strip()
             return re.sub(r'\s+([,.])', r'\1', text)
 
-        def first_segment(value: Optional[str]) -> str:
+        def extract_city(value: Optional[str]) -> str:
             """
-            Keep only the part before the first comma. location_city often
-            carries a trailing state/region (e.g. "Brisbane, Queensland"),
-            which is redundant with country and was getting ellipsis-
-            truncated in the UI; the city name alone is what we want.
+            Reduce location_city to just the city name.
+
+            Source data is inconsistent: comma-separated "Brisbane,
+            Queensland"; German listings prefix a postal code with no comma
+            ("63762 Grossostheim"); Australian ones suffix a state code and
+            postcode instead ("Narre Warren VIC 3805"). A few records jam an
+            entire street address in here (e.g. "205 Wolf street Pearcy, AR
+            71964 United States") - those aren't safely recoverable without
+            guessing, so they're left as-is rather than risking a wrong
+            guess elsewhere.
             """
-            return clean(value).split(',')[0].strip()
+            text = clean(value).split(',')[0].strip()
+            text = re.sub(r'^\d+\s+', '', text)  # leading postal code
+            text = re.sub(r'\s+[A-Za-z]{2,3}\s+\d{3,6}$', '', text)  # trailing state + postcode
+            return '' if text.isdigit() else text
 
         # Codes are ISO 3166-1 alpha-2, except UK sub-regions (e.g. GB-SCT)
         # which collapse to GB so they match Cloudflare's cf.country field.
@@ -153,7 +162,7 @@ class SmoothcompScraper:
             url=url,
             start_date=parse_date(data.get('startdate')),
             end_date=parse_date(data.get('enddate')),
-            city=first_segment(data.get('location_city')),
+            city=extract_city(data.get('location_city')),
             country=clean(data.get('location_country_human')),
             country_code=country_code,
             sport='Brazilian Jiu-Jitsu',
