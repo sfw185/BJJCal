@@ -10,8 +10,8 @@
             max-width: 640px;
             margin: 0 auto;
             padding: 40px 20px 60px;
-            background: #f5f5f5;
-            color: #333;
+            background: #131316;
+            color: #e4e4e7;
         }
         header {
             margin-bottom: 32px;
@@ -22,14 +22,15 @@
             margin-bottom: 6px;
         }
         .subtitle {
-            color: #888;
+            color: #8b8b93;
             font-size: 14px;
         }
         .card {
-            background: white;
+            background: #1c1c21;
+            border: 1px solid #28282e;
             border-radius: 12px;
             padding: 24px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+            box-shadow: 0 1px 3px rgba(0,0,0,0.3);
             margin-bottom: 16px;
         }
         label {
@@ -39,41 +40,41 @@
             font-size: 13px;
             text-transform: uppercase;
             letter-spacing: 0.5px;
-            color: #999;
+            color: #8b8b93;
         }
         select {
             width: 100%;
             padding: 12px;
             font-size: 16px;
-            border: 2px solid #e8e8e8;
+            border: 2px solid #2f2f36;
             border-radius: 8px;
-            background: white;
-            color: #333;
+            background: #1c1c21;
+            color: #e4e4e7;
             appearance: none;
-            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23999' fill='none' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E");
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%238b8b93' fill='none' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E");
             background-repeat: no-repeat;
             background-position: right 12px center;
         }
         select:focus {
             outline: none;
-            border-color: #333;
+            border-color: #6e6e78;
         }
         .url-row {
             margin-top: 20px;
         }
         .url-box {
-            background: #fafafa;
-            border: 1px solid #e8e8e8;
+            background: #17171b;
+            border: 1px solid #28282e;
             border-radius: 8px;
             padding: 12px 14px;
             font-family: 'SF Mono', 'Fira Code', monospace;
             font-size: 12px;
             word-break: break-all;
-            color: #555;
+            color: #b9b9c0;
             min-height: 42px;
             line-height: 1.5;
         }
-        .url-box.placeholder { color: #bbb; }
+        .url-box.placeholder { color: #55555c; }
         .actions {
             display: flex;
             gap: 10px;
@@ -95,12 +96,12 @@
         button:not(:disabled):hover { opacity: 0.85; }
         button:not(:disabled):active { transform: scale(0.98); }
         .btn-primary {
-            background: #333;
-            color: white;
+            background: #e4e4e7;
+            color: #16161a;
         }
         .btn-secondary {
-            background: #e8e8e8;
-            color: #333;
+            background: #2c2c32;
+            color: #e4e4e7;
         }
         .actions {
             display: flex;
@@ -111,31 +112,31 @@
         .quick-add-link {
             font-size: 13px;
             font-weight: 500;
-            color: #555;
+            color: #b9b9c0;
             text-decoration: none;
             white-space: nowrap;
         }
-        .quick-add-link:hover { color: #111; }
+        .quick-add-link:hover { color: #f0f0f2; }
         .instructions p {
             font-size: 14px;
-            color: #666;
+            color: #a8a8b0;
             line-height: 1.6;
         }
         .instructions em {
             font-style: normal;
-            color: #333;
+            color: #e4e4e7;
         }
         footer {
             margin-top: 32px;
             padding-top: 20px;
-            border-top: 1px solid #e8e8e8;
+            border-top: 1px solid #28282e;
             font-size: 12px;
-            color: #aaa;
+            color: #6e6e78;
             line-height: 1.6;
             text-align: center;
         }
         footer a {
-            color: #999;
+            color: #8b8b93;
         }
     </style>
 </head>
@@ -196,8 +197,23 @@
                     option.value = c.slug;
                     option.textContent = `${c.name} (${c.count})`;
                     option.dataset.count = c.count;
+                    option.dataset.code = c.code || '';
                     select.appendChild(option);
                 });
+
+                // window.__CF_COUNTRY__ is injected by a Cloudflare Worker
+                // (see cloudflare/country-worker.js) from the visitor's
+                // edge-detected country. Absent if the Worker isn't
+                // deployed, or unrecognized (e.g. Tor) - either way this
+                // just leaves the placeholder selected.
+                const detected = window.__CF_COUNTRY__;
+                if (detected) {
+                    const match = metadata.countries.find(c => c.code === detected);
+                    if (match) {
+                        select.value = match.slug;
+                        onCountryChange();
+                    }
+                }
 
             } catch (e) {
                 document.getElementById('status').textContent = 'Failed to load calendar data';

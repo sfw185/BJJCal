@@ -30,6 +30,7 @@ class Event:
     location: Optional[str] = None
     city: Optional[str] = None
     country: Optional[str] = None
+    country_code: Optional[str] = None
     sport: Optional[str] = None
     organizer: Optional[str] = None
     participants: Optional[int] = None
@@ -132,6 +133,11 @@ class SmoothcompScraper:
             text = re.sub(r'\s+', ' ', (value or '')).strip()
             return re.sub(r'\s+([,.])', r'\1', text)
 
+        # Codes are ISO 3166-1 alpha-2, except UK sub-regions (e.g. GB-SCT)
+        # which collapse to GB so they match Cloudflare's cf.country field.
+        raw_code = clean(data.get('location_country')).upper()
+        country_code = raw_code.split('-')[0] or None
+
         return Event(
             id=str(event_id),
             name=clean(data.get('title')) or 'Unknown Event',
@@ -140,6 +146,7 @@ class SmoothcompScraper:
             end_date=parse_date(data.get('enddate')),
             city=clean(data.get('location_city')),
             country=clean(data.get('location_country_human')),
+            country_code=country_code,
             sport='Brazilian Jiu-Jitsu',
             registration_open=not data.get('eventEnded', False),
         )

@@ -15,6 +15,7 @@ import asyncio
 import json
 import os
 import re
+from collections import Counter
 from datetime import datetime
 from pathlib import Path
 
@@ -64,23 +65,28 @@ async def main(limit: int | None = None):
     if not events:
         raise SystemExit("No events collected - refusing to generate empty calendars")
 
-    # Group events by country
-    events_by_country: dict[str, list[Event]] = {}
+    # Group events by ISO country code, not the human-readable name: source
+    # data splinters some countries by region (UK events carry "United
+    # Kingdom", "England", "Scotland", "Wales", or "Northern Ireland" for the
+    # same GB code), which would otherwise produce duplicate calendars.
+    events_by_code: dict[str, list[Event]] = {}
     for event in events:
-        country = event.country or "Unknown"
-        if country not in events_by_country:
-            events_by_country[country] = []
-        events_by_country[country].append(event)
+        code = event.country_code or "UNKNOWN"
+        events_by_code.setdefault(code, []).append(event)
 
-    # Sort countries by event count (exclude Unknown)
-    countries_sorted = [
+    codes_sorted = [
         c for c in sorted(
-            events_by_country.keys(),
-            key=lambda c: len(events_by_country[c]),
+            events_by_code.keys(),
+            key=lambda c: len(events_by_code[c]),
             reverse=True
         )
-        if c != "Unknown"
+        if c != "UNKNOWN"
     ]
+
+    def display_name(country_events: list[Event]) -> str:
+        """Most common human-readable name among a code's events."""
+        names = Counter(e.country for e in country_events if e.country)
+        return names.most_common(1)[0][0] if names else "Unknown"
 
     # Generate metadata.json
     log("\nGenerating metadata.json...")
@@ -89,11 +95,12 @@ async def main(limit: int | None = None):
         "total_events": len(events),
         "countries": [
             {
-                "name": country,
-                "slug": slugify(country),
-                "count": len(events_by_country[country])
+                "name": display_name(events_by_code[code]),
+                "slug": slugify(display_name(events_by_code[code])),
+                "count": len(events_by_code[code]),
+                "code": code
             }
-            for country in countries_sorted
+            for code in codes_sorted
         ]
     }
 
@@ -101,20 +108,21 @@ async def main(limit: int | None = None):
         json.dump(metadata, f, indent=2)
 
     # Generate per-country calendars
-    log(f"Generating {len(countries_sorted)} country calendars...")
-    for country in countries_sorted:
-        country_events = events_by_country[country]
-        slug = slugify(country)
+    log(f"Generating {len(codes_sorted)} country calendars...")
+    for code in codes_sorted:
+        country_events = events_by_code[code]
+        name = display_name(country_events)
+        slug = slugify(name)
         cal_data = generate_ical(
             country_events,
-            calendar_name=f"BJJ Calendar - {country}"
+            calendar_name=f"BJJ Calendar - {name}"
         )
         with open(OUTPUT_DIR / "calendars" / f"{slug}.ics", "wb") as f:
             f.write(cal_data)
-        log(f"  {country}: {len(country_events)} events")
+        log(f"  {name}: {len(country_events)} events")
 
     log(f"\nDone! Files written to {OUTPUT_DIR}/")
-    log(f"  - metadata.json ({len(countries_sorted)} countries)")
+    log(f"  - metadata.json ({len(codes_sorted)} countries)")
     log(f"  - calendars/*.ics")
     log(f"\nTo test locally:")
     log(f"  python -m http.server 8000 -d {OUTPUT_DIR}")
