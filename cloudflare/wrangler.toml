@@ -1,0 +1,8 @@
+name = "bjjcal-country-detect"
+main = "country-worker.js"
+compatibility_date = "2026-07-27"
+account_id = "a6ef85552aea674cb71a79c86703b801"
+
+routes = [
+  { pattern = "bjjcal.app/*", zone_name = "bjjcal.app" }
+]

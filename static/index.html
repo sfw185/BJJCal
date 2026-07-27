@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
+    <meta charset="utf-8">
     <title>BJJ Calendar</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
@@ -117,6 +118,48 @@
             white-space: nowrap;
         }
         .quick-add-link:hover { color: #f0f0f2; }
+        .events-list {
+            margin-top: 8px;
+            max-height: 420px;
+            overflow-y: auto;
+        }
+        .event-row {
+            display: flex;
+            align-items: baseline;
+            gap: 10px;
+            padding: 8px 0;
+            border-bottom: 1px solid #24242a;
+            font-size: 13px;
+        }
+        .event-row:last-child { border-bottom: none; }
+        .event-date {
+            color: #8b8b93;
+            white-space: nowrap;
+            min-width: 64px;
+            font-variant-numeric: tabular-nums;
+        }
+        .event-name {
+            flex: 1;
+            min-width: 0;
+        }
+        .event-name a {
+            color: #e4e4e7;
+            text-decoration: none;
+        }
+        .event-name a:hover { text-decoration: underline; }
+        .event-city {
+            color: #6e6e78;
+            white-space: nowrap;
+            max-width: 120px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            font-size: 12px;
+        }
+        .events-status {
+            color: #8b8b93;
+            font-size: 13px;
+            padding: 8px 0;
+        }
         .instructions p {
             font-size: 14px;
             color: #a8a8b0;
@@ -163,6 +206,11 @@
         </div>
     </div>
 
+    <div class="card" id="eventsCard" style="display:none">
+        <label>Upcoming events</label>
+        <div class="events-list" id="eventsList"></div>
+    </div>
+
     <div class="card instructions">
         <label>Other calendar apps</label>
         <p>Google Calendar subscriptions can only be added from the desktop site, but once added they'll sync to your phone automatically. For other apps, copy the URL and look for an "Add calendar by URL" or "Subscribe to calendar" option. If you're unsure, search for <em>"subscribe to ics calendar"</em> + your app name.</p>
@@ -179,6 +227,7 @@
             : window.location.pathname.replace(/\/[^\/]*$/, '');
         const baseUrl = window.location.origin + basePath;
         let metadata = null;
+        const eventsCache = {};
 
         async function init() {
             try {
@@ -240,6 +289,101 @@
                 document.getElementById('addGoogle').style.display = '';
                 document.getElementById('addGoogle').href =
                     'https://calendar.google.com/calendar/r?cid=' + encodeURIComponent(url.replace(/^https?:/, 'webcal:'));
+
+                loadEvents(select.value);
+            }
+        }
+
+        // Dates from events/*.json are YYYY-MM-DD (all-day, no time zone).
+        // Anchoring to UTC and formatting in UTC keeps the displayed day
+        // from shifting backward for anyone west of Greenwich.
+        function formatEventDate(startIso, endIso) {
+            const start = new Date(`${startIso}T00:00:00Z`);
+            const monthDay = { month: 'short', day: 'numeric', timeZone: 'UTC' };
+            const startStr = start.toLocaleDateString(undefined, monthDay);
+
+            if (!endIso || endIso === startIso) return startStr;
+
+            const end = new Date(`${endIso}T00:00:00Z`);
+            const sameMonth = start.getUTCFullYear() === end.getUTCFullYear()
+                && start.getUTCMonth() === end.getUTCMonth();
+            const endStr = end.toLocaleDateString(
+                undefined,
+                sameMonth ? { day: 'numeric', timeZone: 'UTC' } : monthDay
+            );
+            return `${startStr}–${endStr}`;
+        }
+
+        function renderEvents(events) {
+            const list = document.getElementById('eventsList');
+            list.innerHTML = '';
+
+            if (!events.length) {
+                const status = document.createElement('p');
+                status.className = 'events-status';
+                status.textContent = 'No upcoming events.';
+                list.appendChild(status);
+                return;
+            }
+
+            events.forEach(event => {
+                const row = document.createElement('div');
+                row.className = 'event-row';
+
+                const date = document.createElement('span');
+                date.className = 'event-date';
+                date.textContent = formatEventDate(event.start_date, event.end_date);
+
+                const name = document.createElement('span');
+                name.className = 'event-name';
+                const link = document.createElement('a');
+                link.href = event.url;
+                link.target = '_blank';
+                link.rel = 'noopener';
+                link.textContent = event.name;
+                name.appendChild(link);
+
+                const city = document.createElement('span');
+                city.className = 'event-city';
+                city.textContent = event.city || '';
+
+                row.append(date, name, city);
+                list.appendChild(row);
+            });
+        }
+
+        async function loadEvents(slug) {
+            const card = document.getElementById('eventsCard');
+            const list = document.getElementById('eventsList');
+            card.style.display = '';
+            list.innerHTML = '';
+
+            const status = document.createElement('p');
+            status.className = 'events-status';
+            status.textContent = 'Loading events…';
+            list.appendChild(status);
+
+            try {
+                let events = eventsCache[slug];
+                if (!events) {
+                    const res = await fetch(`events/${slug}.json`);
+                    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                    events = await res.json();
+                    eventsCache[slug] = events;
+                }
+
+                // Ignore a stale response if the user picked another
+                // country while this fetch was in flight
+                if (document.getElementById('country').value !== slug) return;
+
+                renderEvents(events);
+            } catch (err) {
+                list.innerHTML = '';
+                const errStatus = document.createElement('p');
+                errStatus.className = 'events-status';
+                errStatus.textContent = 'Failed to load events.';
+                list.appendChild(errStatus);
+                console.error(err);
             }
         }
 

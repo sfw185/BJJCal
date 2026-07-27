@@ -9,4 +9,5 @@ venv/
 
 # Generated static files (created by GitHub Actions)
 static/calendars/
+static/events/
 static/metadata.json

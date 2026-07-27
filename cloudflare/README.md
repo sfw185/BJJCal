@@ -1,58 +1,67 @@
 # Cloudflare setup: country auto-detect + static asset caching
 
-`bjjcal.app` currently uses Cloudflare only for DNS (grey-clouded / "DNS
-only"); traffic goes straight to GitHub Pages, which has no server-side code
-and no access to the visitor's IP-derived country. `country-worker.js`
-fixes that by running at Cloudflare's edge, in front of GitHub Pages, and
-injecting the detected country into the page before it reaches the browser.
+**Status: live.** `bjjcal.app` is proxied through Cloudflare (SSL/TLS mode
+set to Full, per the redirect-loop warning below), and `country-worker.js`
+is deployed and routed at `bjjcal.app/*`. Verified against production: the
+Worker injects `window.__CF_COUNTRY__` into the homepage, a real visitor
+request auto-selected the correct country in the dropdown, and
+`calendars/*.ics` / `metadata.json` pass through byte-identical (confirmed
+via two consecutive fetches diffing clean).
 
-This setup happens in the Cloudflare dashboard - there's no repo-side
-deploy step.
+## How it's deployed
 
-## 1. Proxy the domain (orange-cloud it)
-
-**DNS tab → find the `bjjcal.app` (and `www`, if used) records → click the
-grey cloud icon to turn it orange (Proxied).**
-
-**Before doing this, set SSL/TLS mode to "Full" or "Full (strict)"**
-(SSL/TLS tab → Overview). GitHub Pages already serves valid HTTPS and
-force-redirects HTTP → HTTPS. If the mode is left on "Flexible", Cloudflare
-talks HTTP to GitHub's origin, GitHub redirects back to HTTPS, and the
-result is an infinite redirect loop that takes the site down. This is the
-single most common way this kind of setup breaks.
-
-## 2. Create the Worker
-
-Workers & Pages → Create → Create Worker → replace the default script with
-the contents of `country-worker.js` → Deploy.
-
-## 3. Route it at the domain
-
-On the Worker's Triggers tab (or Websites → bjjcal.app → Workers Routes),
-add a route:
+`wrangler.toml` in this directory holds the account ID and route. To
+redeploy after editing `country-worker.js`:
 
 ```
-bjjcal.app/*
+cd cloudflare
+npx wrangler deploy
 ```
 
-(add `www.bjjcal.app/*` too if that subdomain is live).
+This requires an authenticated `wrangler` session (`npx wrangler login`,
+or a `CLOUDFLARE_API_TOKEN` env var scoped to Workers + zone for
+`bjjcal.app`). `wrangler deploy --dry-run` bundles the script without
+publishing, useful for catching syntax errors before touching production.
 
-## 4. Verify
+## Re-verifying after a change
 
-Visit `https://bjjcal.app/`, open devtools console, and check:
-
-```js
-window.__CF_COUNTRY__
+```
+curl -s https://bjjcal.app/ | grep -oE '<script>window\.__CF_COUNTRY__=[^<]*</script>'
+curl -sI https://bjjcal.app/calendars/australia.ics | grep -iE 'content-type|cf-ray'
 ```
 
-It should print a 2-letter ISO code (e.g. `"US"`). Also confirm a calendar
-file still downloads correctly, e.g. `https://bjjcal.app/calendars/australia.ics`
-- the Worker is scoped to only rewrite `/` and `/index.html`, but this
-confirms that scoping actually holds against live traffic.
+The first should show an injected script tag with a 2-letter ISO code (or
+whatever Cloudflare resolves your request's country to); the second
+confirms the Worker is still leaving calendar files untouched - it's
+scoped to only rewrite `/` and `/index.html`, but this is what actually
+proves that scoping holds against live traffic.
 
 If the country matches one in `metadata.json`, the site's dropdown
 pre-selects it automatically; otherwise it just falls back to "Select a
 country...".
+
+### The manual dashboard steps, for reference
+
+These are already done for the current setup, kept here in case the zone
+or Worker ever needs to be rebuilt from scratch in the dashboard instead
+of via `wrangler`.
+
+**1. Proxy the domain (orange-cloud it).** DNS tab → find the `bjjcal.app`
+(and `www`, if used) records → click the grey cloud icon to turn it
+orange (Proxied). **Do this only after** setting SSL/TLS mode to "Full" or
+"Full (strict)" (SSL/TLS tab → Overview) - GitHub Pages already serves
+valid HTTPS and force-redirects HTTP → HTTPS, so leaving the mode on
+"Flexible" makes Cloudflare talk HTTP to GitHub's origin, which redirects
+back to HTTPS, producing an infinite redirect loop that takes the site
+down. This is the single most common way this kind of setup breaks.
+
+**2. Create the Worker.** Workers & Pages → Create → Create Worker →
+replace the default script with the contents of `country-worker.js` →
+Deploy.
+
+**3. Route it at the domain.** On the Worker's Triggers tab (or Websites →
+bjjcal.app → Workers Routes), add a route: `bjjcal.app/*` (and
+`www.bjjcal.app/*` too if that subdomain is live).
 
 ---
 

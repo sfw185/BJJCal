@@ -47,10 +47,14 @@ async def main(limit: int | None = None):
     OUTPUT_DIR.mkdir(exist_ok=True)
     calendars_dir = OUTPUT_DIR / "calendars"
     calendars_dir.mkdir(exist_ok=True)
+    events_dir = OUTPUT_DIR / "events"
+    events_dir.mkdir(exist_ok=True)
 
-    # Clear stale calendars so a country that no longer has events cannot
-    # leave an orphaned .ics file behind
+    # Clear stale calendars/event lists so a country that no longer has
+    # events cannot leave an orphaned file behind
     for stale in calendars_dir.glob("*.ics"):
+        stale.unlink()
+    for stale in events_dir.glob("*.json"):
         stale.unlink()
 
     # Scrape all events
@@ -107,7 +111,9 @@ async def main(limit: int | None = None):
     with open(OUTPUT_DIR / "metadata.json", "w") as f:
         json.dump(metadata, f, indent=2)
 
-    # Generate per-country calendars
+    # Generate per-country calendars and event lists (the latter power the
+    # "upcoming events" preview on the page; kept separate from the .ics
+    # files so the front end doesn't need an iCal parser)
     log(f"Generating {len(codes_sorted)} country calendars...")
     for code in codes_sorted:
         country_events = events_by_code[code]
@@ -119,11 +125,35 @@ async def main(limit: int | None = None):
         )
         with open(OUTPUT_DIR / "calendars" / f"{slug}.ics", "wb") as f:
             f.write(cal_data)
+
+        event_list = [
+            {
+                "id": e.id,
+                "name": e.name,
+                "url": e.url,
+                "start_date": e.start_date.isoformat() if e.start_date else None,
+                # Source data occasionally has end_date before start_date
+                # (an organizer typo upstream); clamp so the preview never
+                # shows a backwards date range. calendar_gen.py applies the
+                # same clamp for the .ics output.
+                "end_date": (
+                    e.end_date.isoformat()
+                    if e.end_date and e.start_date and e.end_date >= e.start_date
+                    else e.start_date.isoformat() if e.start_date else None
+                ),
+                "city": e.city or ""
+            }
+            for e in country_events
+        ]
+        with open(events_dir / f"{slug}.json", "w") as f:
+            json.dump(event_list, f, indent=2)
+
         log(f"  {name}: {len(country_events)} events")
 
     log(f"\nDone! Files written to {OUTPUT_DIR}/")
     log(f"  - metadata.json ({len(codes_sorted)} countries)")
     log(f"  - calendars/*.ics")
+    log(f"  - events/*.json")
     log(f"\nTo test locally:")
     log(f"  python -m http.server 8000 -d {OUTPUT_DIR}")
 
