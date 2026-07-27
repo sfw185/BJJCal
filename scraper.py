@@ -137,18 +137,27 @@ class SmoothcompScraper:
             """
             Reduce location_city to just the city name.
 
-            Source data is inconsistent: comma-separated "Brisbane,
-            Queensland"; German listings prefix a postal code with no comma
-            ("63762 Grossostheim"); Australian ones suffix a state code and
-            postcode instead ("Narre Warren VIC 3805"). A few records jam an
+            Source data appends a region using whichever separator that
+            country's convention favors, so strip whatever follows the
+            first one: comma ("Brisbane, Queensland"), slash
+            ("Florianopolis/SC"), or " - " ("Fortaleza - CE"), or a bare
+            hyphen directly against a 2-letter state code with no space
+            ("Brasilia-DF"). German and Austrian listings prefix a postal
+            code instead, with no separator at all ("63762 Grossostheim",
+            "A-2344 Maria Enzersdorf"); Australian ones suffix a state code
+            and postcode ("Narre Warren VIC 3805"). A few records jam an
             entire street address in here (e.g. "205 Wolf street Pearcy, AR
             71964 United States") - those aren't safely recoverable without
-            guessing, so they're left as-is rather than risking a wrong
-            guess elsewhere.
+            guessing at which fragment is the real city, so they're left
+            as-is rather than risking a wrong guess elsewhere.
             """
-            text = clean(value).split(',')[0].strip()
-            text = re.sub(r'^\d+\s+', '', text)  # leading postal code
+            text = clean(value)
+            for sep in (',', '/', ' - '):
+                text = text.split(sep)[0]
+            text = text.strip()
+            text = re.sub(r'^[A-Za-z]{0,3}-?\d{3,6}\s+', '', text)  # leading postal code
             text = re.sub(r'\s+[A-Za-z]{2,3}\s+\d{3,6}$', '', text)  # trailing state + postcode
+            text = re.sub(r'\s*-[A-Z]{2}$', '', text)  # trailing bare-hyphen state code
             return '' if text.isdigit() else text
 
         # Codes are ISO 3166-1 alpha-2, except UK sub-regions (e.g. GB-SCT)
