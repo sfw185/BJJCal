@@ -15,7 +15,7 @@
             color: #e4e4e7;
         }
         header {
-            margin-bottom: 32px;
+            margin-bottom: 20px;
         }
         h1 {
             font-size: 28px;
@@ -60,8 +60,62 @@
             outline: none;
             border-color: #6e6e78;
         }
+        .country-row {
+            margin-bottom: 12px;
+        }
+
+        /* Subscribe CTA: a single slim row by default, expanding in place
+           to reveal the feed URL and the app-specific instructions. */
+        .subscribe {
+            background: #1c1c21;
+            border: 1px solid #28282e;
+            border-radius: 12px;
+            margin-bottom: 20px;
+        }
+        .subscribe[open] {
+            border-color: #34343c;
+        }
+        .subscribe summary {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 13px 16px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            color: #e4e4e7;
+            list-style: none;
+            border-radius: 12px;
+        }
+        .subscribe summary::-webkit-details-marker { display: none; }
+        .subscribe summary:hover { background: #202026; }
+        .subscribe summary:focus-visible {
+            outline: 2px solid #6e6e78;
+            outline-offset: -2px;
+        }
+        .subscribe-icon {
+            flex-shrink: 0;
+            color: #8b8b93;
+        }
+        .subscribe-text {
+            flex: 1;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .subscribe-chevron {
+            flex-shrink: 0;
+            transition: transform 0.15s;
+        }
+        .subscribe[open] .subscribe-chevron { transform: rotate(180deg); }
+        .subscribe-body {
+            padding: 4px 16px 18px;
+            border-top: 1px solid #24242a;
+            margin-top: -1px;
+        }
         .url-row {
-            margin-top: 20px;
+            margin-top: 16px;
         }
         .url-box {
             background: #17171b;
@@ -76,13 +130,8 @@
             line-height: 1.5;
         }
         .url-box.placeholder { color: #55555c; }
-        .actions {
-            display: flex;
-            gap: 10px;
-            margin-top: 12px;
-        }
         button {
-            padding: 12px 16px;
+            padding: 10px 16px;
             font-size: 14px;
             font-weight: 600;
             border: none;
@@ -100,14 +149,11 @@
             background: #e4e4e7;
             color: #16161a;
         }
-        .btn-secondary {
-            background: #2c2c32;
-            color: #e4e4e7;
-        }
         .actions {
             display: flex;
             align-items: center;
             justify-content: space-between;
+            gap: 10px;
             margin-top: 12px;
         }
         .quick-add-link {
@@ -118,6 +164,18 @@
             white-space: nowrap;
         }
         .quick-add-link:hover { color: #f0f0f2; }
+        .subscribe-help {
+            font-size: 13px;
+            color: #8b8b93;
+            line-height: 1.6;
+            margin-top: 16px;
+            padding-top: 14px;
+            border-top: 1px solid #24242a;
+        }
+        .subscribe-help em {
+            font-style: normal;
+            color: #b9b9c0;
+        }
         .events-list {
             margin-top: 8px;
         }
@@ -158,15 +216,6 @@
             font-size: 13px;
             padding: 8px 0;
         }
-        .instructions p {
-            font-size: 14px;
-            color: #a8a8b0;
-            line-height: 1.6;
-        }
-        .instructions em {
-            font-style: normal;
-            color: #e4e4e7;
-        }
         footer {
             margin-top: 32px;
             padding-top: 20px;
@@ -187,31 +236,44 @@
         <p class="subtitle" id="status">Loading...</p>
     </header>
 
-    <div class="card">
-        <label for="country">Country</label>
-        <select id="country" onchange="onCountryChange()">
+    <div class="country-row">
+        <select id="country" aria-label="Country" onchange="onCountryChange()">
             <option value="" disabled selected>Select a country...</option>
         </select>
-
-        <div class="url-row">
-            <label>Calendar URL</label>
-            <div class="url-box placeholder" id="urlBox">Select a country to get your subscription URL</div>
-        </div>
-
-        <div class="actions" id="actions">
-            <button class="btn-primary" onclick="copyUrl()" id="copyBtn" disabled>Copy URL</button>
-            <a href="#" id="addGoogle" class="quick-add-link" style="display:none" target="_blank">Add to Google Calendar (desktop)</a>
-        </div>
     </div>
 
-    <div class="card" id="eventsCard" style="display:none">
+    <details class="subscribe" id="subscribe">
+        <summary>
+            <svg class="subscribe-icon" width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true">
+                <rect x="1.8" y="2.8" width="12.4" height="11.4" rx="2"/>
+                <path d="M5 1.4v2.8M11 1.4v2.8M1.8 6.6h12.4"/>
+            </svg>
+            <span class="subscribe-text" id="subscribeText">Subscribe to this calendar</span>
+            <svg class="subscribe-chevron" width="12" height="8" viewBox="0 0 12 8" fill="none" aria-hidden="true">
+                <path d="M1 1l5 5 5-5" stroke="#8b8b93" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+        </summary>
+
+        <div class="subscribe-body">
+            <div class="url-row">
+                <label>Calendar URL</label>
+                <div class="url-box placeholder" id="urlBox">Select a country to get your subscription URL</div>
+            </div>
+
+            <div class="actions">
+                <button class="btn-primary" onclick="copyUrl()" id="copyBtn" disabled>Copy URL</button>
+                <a href="#" id="addGoogle" class="quick-add-link" style="display:none" target="_blank">Add to Google Calendar (desktop)</a>
+            </div>
+
+            <p class="subscribe-help">Google Calendar subscriptions can only be added from the desktop site, but once added they'll sync to your phone automatically. For other apps, copy the URL and look for an "Add calendar by URL" or "Subscribe to calendar" option. If you're unsure, search for <em>"subscribe to ics calendar"</em> + your app name.</p>
+        </div>
+    </details>
+
+    <div class="card" id="eventsCard">
         <label>Upcoming events</label>
-        <div class="events-list" id="eventsList"></div>
-    </div>
-
-    <div class="card instructions">
-        <label>Other calendar apps</label>
-        <p>Google Calendar subscriptions can only be added from the desktop site, but once added they'll sync to your phone automatically. For other apps, copy the URL and look for an "Add calendar by URL" or "Subscribe to calendar" option. If you're unsure, search for <em>"subscribe to ics calendar"</em> + your app name.</p>
+        <div class="events-list" id="eventsList">
+            <p class="events-status">Select a country to see upcoming events.</p>
+        </div>
     </div>
 
     <footer>
@@ -236,7 +298,7 @@
                 const lastUpdate = new Date(metadata.generated_at).toLocaleDateString(undefined, {
                     year: 'numeric', month: 'short', day: 'numeric'
                 });
-                statusEl.textContent = `${metadata.total_events} events in ${metadata.countries.length} countries \u00b7 Updated ${lastUpdate}`;
+                statusEl.textContent = `${metadata.total_events} events in ${metadata.countries.length} countries · Updated ${lastUpdate}`;
 
                 const select = document.getElementById('country');
                 metadata.countries.forEach(c => {
@@ -245,6 +307,7 @@
                     option.textContent = `${c.name} (${c.count})`;
                     option.dataset.count = c.count;
                     option.dataset.code = c.code || '';
+                    option.dataset.name = c.name;
                     select.appendChild(option);
                 });
 
@@ -283,6 +346,12 @@
                 urlBox.textContent = url;
                 urlBox.classList.remove('placeholder');
                 document.getElementById('copyBtn').disabled = false;
+
+                // Name the country in the collapsed CTA so it still says
+                // what you'd be subscribing to without expanding it.
+                const name = selectedOption.dataset.name;
+                document.getElementById('subscribeText').textContent =
+                    name ? `Subscribe to the ${name} calendar` : 'Subscribe to this calendar';
 
                 document.getElementById('addGoogle').style.display = '';
                 document.getElementById('addGoogle').href =
@@ -351,9 +420,7 @@
         }
 
         async function loadEvents(slug) {
-            const card = document.getElementById('eventsCard');
             const list = document.getElementById('eventsList');
-            card.style.display = '';
             list.innerHTML = '';
 
             const status = document.createElement('p');
